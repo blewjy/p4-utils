@@ -172,11 +172,15 @@ class P4Switch(Switch):
 
     def start(self, controllers = None):
         """Start up a new P4 switch."""
+
         info("Starting P4 switch {}.\n".format(self.name))
         args = [self.sw_path]
         for port, intf in self.intfs.items():
             if not intf.IP():
-                args.extend(['-i', str(port) + "@" + intf.name])
+                if "cpu" in str(intf):
+                    args.extend(['-i', "24@" + intf.name])
+                else:
+                    args.extend(['-i', str(port) + "@" + intf.name])
         if self.pcap_dump:
             if self.pcap_dir:
                 args.append("--pcap="+self.pcap_dir)
@@ -209,6 +213,7 @@ class P4Switch(Switch):
             exit(1)
         info("P4 switch {} has been started.\n".format(self.name))
 
+        
         # only do this for l3..
         #self.cmd('sysctl', '-w', 'net.ipv4.ip_forward=1')
 
@@ -297,7 +302,7 @@ class P4RuntimeSwitch(P4Switch):
             sleep(0.5)
 
     def start(self, controllers):
-        info("Starting P4 switch {}.\n".format(self.name))
+        info("Starting P4Runtime switch {}.\n".format(self.name))
         args = [self.sw_path]
         for port, intf in self.intfs.items():
             if not intf.IP():

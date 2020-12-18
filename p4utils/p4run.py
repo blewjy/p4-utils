@@ -296,6 +296,30 @@ class AppRunner(object):
             A mininet instance is stored as self.net and self.net.start() has been called.
         """
 
+        # This part is just a convenient place to print out all nodes' MAC info
+        for h, h_i in self.net.topo.hosts_info.items():
+            print "************", h, "************"
+            print "{}\t{}".format(h_i['ip'], h_i['mac'])
+            print "*"*(26+len(h))
+        for s in self.net.switches:
+            print "************", s, "************"
+            for port, intf in s.intfs.items():
+                print "{}\t{}\t{}".format(intf, intf.IP(), intf.MAC())
+            print "*"*(26+len(str(s)))
+
+
+        for sw_name, sw_dict in self.net.topo.sw_port_mapping.items():
+            pass
+
+        for sw_name, sw_dict in self.conf.get('topology',{}).get('switches', {}).items():
+            if 'cli_input' not in sw_dict:
+                continue
+            filename = sw_dict['cli_input']
+            print 'cli_input filename for {}: {}'.format(sw_name, filename)
+
+
+
+
         # run controller
         controller = self.app_controller(self.conf, self.net, self.log_dir, self.log_enabled)
         controller.start()

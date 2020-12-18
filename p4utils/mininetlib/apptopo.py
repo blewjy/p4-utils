@@ -498,7 +498,16 @@ class AppTopo(Topo):
     def addSwitchPort(self, sw, node2):
         if sw not in self.sw_port_mapping:
             self.sw_port_mapping[sw] = []
-        portno = len(self.sw_port_mapping[sw]) + 1
+
+        count_normal = 0
+        for sw_value in self.sw_port_mapping[sw]: 
+            if "cpu" not in str(sw_value[1]):
+                count_normal += 1
+
+        if "cpu" in node2:
+            portno = 24
+        else:
+            portno = count_normal + 1
         self.sw_port_mapping[sw].append((portno, node2))
 
     def printPortMapping(self):
