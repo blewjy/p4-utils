@@ -202,6 +202,8 @@ configure the hosts, and switches without knowing what will switches do.
  * `manual`: can be used when your topology will be formed by heterogeneous
  devices, you have to manually set the IP to each interface and host gateways.
 
+ > For more information about assignment strategies see its [doc page](docs/assignment_strategies.md).
+
  > By default l2 strategy is used
 
 ##### `auto_arp_tables:`
@@ -241,6 +243,9 @@ configure the hosts, and switches without knowing what will switches do.
                }
    ```
 
+   If you want to set the default value for all links, you can set the `default_<attribute>`. You have to set this parammeter at the topology level. Possible, defaults are: 
+   `default_delay`, `default_bw`, `default_loss`, `default_queue_length`, `default_link_weight`.
+
 ##### `hosts:`
 
    * Type: dict
@@ -249,6 +254,8 @@ configure the hosts, and switches without knowing what will switches do.
    * Host Conf Attributes:
        * `ip:` if using manual assignament strategy you can assign an ip to a host or use the keyword `auto` if hosts should be able to get IPs through a DHCP server.
        * `gw:` indicates the IP address of the gateway
+       * `commands:` list of commands that will be executed at starting time. As now, only non blocking commands
+        that terminate are allowed here. Example: "commands": ["echo 1 > /etc/config_file"]
 
    > TODO: add a way to start commands at hosts: this feature will be added soon.
 

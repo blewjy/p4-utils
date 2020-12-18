@@ -264,11 +264,63 @@ class TopologyDBP4(TopologyDB):
                 continue
             intf.ip, intf.prefixLen = None, None
 
+    def get_cpu_port_intf(self, p4switch, quiet=False):
+        """
+        Returns the port index of p4switch's cpu port
+
+        Args:
+            p4switch: name of the p4 switch
+            cpu_node: name of the cpu-node (usually a bridge)
+
+        Returns: index
+        """
+        has_cpu_port = any('cpu' in x for x in self[p4switch]['interfaces_to_port'].keys())
+        if self.is_p4switch(p4switch) and has_cpu_port:
+            return [x for x in self[p4switch]['interfaces_to_port'].keys() if 'cpu' in x][0]
+        else:
+            if not quiet:
+                print("Switch %s has no cpu port" % p4switch)
+            return None
+
+    def get_cpu_port_index(self, p4switch, quiet=False):
+        """
+        Returns the port index of p4switch's cpu port
+        Args:
+            p4switch: name of the p4 switch
+
+        Returns: index
+        """
+        has_cpu_port = any('cpu' in x for x in self[p4switch]['interfaces_to_port'].keys())
+        if self.is_p4switch(p4switch) and has_cpu_port:
+            intf = self.get_cpu_port_intf(p4switch)
+            return self[p4switch]['interfaces_to_port'][intf]
+        else:
+            if not quiet:
+                print("Switch %s has no cpu port" % p4switch)
+            return None
+
     def get_thrift_port(self, switch):
         """Return the Thrift port used to communicate with the P4 switch."""
         if self._node(switch).get('subtype', None) != 'p4switch':
             raise TypeError('%s is not a P4 switch' % switch)
         return self._node(switch)['thrift_port']
+
+
+    def get_thrift_ip(self, switch):
+        """Return the Thrift ip used to communicate with the P4 switch."""
+        if self._node(switch).get('subtype', None) != 'p4switch':
+            raise TypeError('%s is not a P4 switch' % switch)
+        return self._node(switch)['thrift_ip']
+
+    def get_ctl_cpu_intf(self, switch):
+        """Returns the controller side cpu interface used to listent for cpu packets"""
+        if self._node(switch).get('subtype', None) != 'p4switch':
+            raise TypeError('%s is not a P4 switch' % switch)
+        
+        if self._node(switch).get('ctl_cpu_intf', None):
+            return self._node(switch)['ctl_cpu_intf']
+        else:
+            return self.get_cpu_port_intf(switch)
 
 class Topology(TopologyDBP4):
     """
@@ -290,7 +342,10 @@ class Topology(TopologyDBP4):
         # nodes can be removed and added, but new links or devices cannot be added.
 
         self._original_network = copy.deepcopy(self._network)
-        self.network_graph = NetworkGraph(self)
+        self.network_graph = NetworkGraph()
+        # this was separated so the Graph constructors has no parameters. Otherwise it would
+        # fail when creating SubGraphs. This happens since networkx 2.x
+        self.network_graph.load_topology_from_database(self)
 
         # Creates hosts to IP and IP to hosts mappings
         self.hosts_ip_mapping = {}
@@ -318,6 +373,12 @@ class Topology(TopologyDBP4):
             return name
         raise InvalidHostIP(ip)
 
+    def get_host_gateway_name(self, host):
+        """Get host gateway name"""
+
+        if self.is_host(host):
+            return self[host]["interfaces_to_node"][self.get_host_first_interface(host)]
+
     def get_host_ip(self, name):
         """Returns the IP to a host name.
 
@@ -338,6 +399,18 @@ class Topology(TopologyDBP4):
         intf = self.get_host_first_interface(name)
         nhop = self.get_interfaces_to_node(name)[intf]
         return self[name][nhop]['mac']
+
+    def is_router(self, node):
+        """Checks if node is a router.
+
+        Args:
+            node: name of router
+
+        Returns:
+            True if node is a router, False otherwise
+        """
+        return self[node]["type"] == "router"
+
 
     def is_host(self, node):
         """Checks if node is a host.
@@ -383,6 +456,11 @@ class Topology(TopologyDBP4):
     def get_p4switches(self):
         """Returns the P4 switches from the topologyDB."""
         return {node: self[node] for node in self if self.is_p4switch(node)}
+
+    def get_routers(self):
+        """Returns the routers from the topologyDB."""
+        return {node: self[node] for node in self if self.is_router(node)}
+
 
     def get_host_first_interface(self, name):
         """Returns the first interface from a host. Assume it's single-homed.
@@ -434,6 +512,34 @@ class Topology(TopologyDBP4):
         """
         nodes = self.get_neighbors(node)
         return [host for host in nodes if self.get_node_type(host) == 'host']
+
+    def get_switches_connected_to(self, node):
+        """
+        Returns the switches directly connected to the node
+
+        Args:
+            node:
+
+        Returns: list of switches
+
+        """
+        nodes = self.get_neighbors(node)
+        return [host for host in nodes if self.is_p4switch(host)]
+
+
+    def get_routers_connected_to(self, node):
+        """
+        Returns the routers directly connected to the node
+
+        Args:
+            node:
+
+        Returns: list of routers
+
+        """
+        nodes = self.get_neighbors(node)
+        return [host for host in nodes if self.is_router(host)]
+
 
     def get_direct_host_networks_from_switch(self, switch):
         """
@@ -521,36 +627,20 @@ class Topology(TopologyDBP4):
         """
         return self.network_graph.get_paths_between_nodes(node1, node2)
 
-    def get_cpu_port_intf(self, p4switch, cpu_node='sw-cpu'):
+    def get_all_paths_between_nodes(self, node1, node2):
         """
-        Returns the port index of p4switch's cpu port
-
+        Returns all the paths between node1 and node2
         Args:
-            p4switch: name of the p4 switch
-            cpu_node: name of the cpu-node (usually a bridge)
+            node1: src node
+            node2: dst node
 
-        Returns: index
-        """
-        if self.is_p4switch(p4switch) and self[p4switch].get(cpu_node, None):
-            return self[p4switch][cpu_node].get('intf')
-        else:
-            print "Switch %s has no cpu port" % p4switch
-            return None
+        Returns: List of shortests paths
 
-    def get_cpu_port_index(self, p4switch, cpu_node='sw-cpu'):
-        """
-        Returns the port index of p4switch's cpu port
-        Args:
-            p4switch: name of the p4 switch
-            cpu_node: name of the cpu-node (usually a bridge)
+        """        
+        return self.network_graph.get_all_paths_between_nodes(node1, node2)
 
-        Returns: index
-        """
-        if self.is_p4switch(p4switch) and self[p4switch].get(cpu_node, None):
-            return self[p4switch]['interfaces_to_port'][self[p4switch][cpu_node].get('intf')]
-        else:
-            print "Switch %s has no cpu port" % p4switch
-            return None
+
+
 
 class NetworkGraph(nx.Graph):
     """
@@ -560,13 +650,12 @@ class NetworkGraph(nx.Graph):
     using networkx useful graph algorithms. For instance we can easily
     get short paths between two nodes.
 
-    Attributes:
-        topology_db: TopologyDB object. It is used to load the networkx object.
     """
 
-    def __init__(self, topology_db, *args, **kwargs):
+    def __init__(self, *args, **kwargs):
         super(NetworkGraph, self).__init__(*args, **kwargs)
 
+    def load_topology_from_database(self, topology_db):
         self.topology_db = topology_db
         self.load_graph_from_db()
 
@@ -599,7 +688,8 @@ class NetworkGraph(nx.Graph):
         for neighbor_node in self.topology_db.get_neighbors(node):
             if neighbor_node in self.nodes():
                 weight = attributes[neighbor_node].get("weight", 1)
-                super(NetworkGraph, self).add_edge(node, neighbor_node, weight=weight)
+                bw = attributes[neighbor_node].get("bw", 1000)
+                super(NetworkGraph, self).add_edge(node, neighbor_node, weight=weight, bw=bw)
 
     def set_node_shape(self, node, shape):
         """Sets node's shape. Used when plotting the network"""
@@ -628,6 +718,10 @@ class NetworkGraph(nx.Graph):
     def get_switches(self):
         """Returns all the nodes that are switches"""
         return [x for x in self.node if self.node[x]["type"] == "switch"]
+
+    def get_routers(self):
+        """Returns all the nodes that are routers"""
+        return [x for x in self.node if self.node[x]["type"] == "router"]        
 
     def get_p4switches(self):
         """Returns all the nodes that are P4 switches"""
@@ -671,6 +765,12 @@ class NetworkGraph(nx.Graph):
     def get_paths_between_nodes(self, node1, node2):
         """Compute the paths between two nodes."""
         paths = nx.all_shortest_paths(self, node1, node2, 'weight')
+        paths = [tuple(x) for x in paths]
+        return paths
+
+    def get_all_paths_between_nodes(self, node1, node2):
+        """Compute all the paths between two nodes."""
+        paths = nx.shortest_simple_paths(self, node1, node2, 'weight')
         paths = [tuple(x) for x in paths]
         return paths
 
